@@ -198,5 +198,5 @@ history = model.fit_generator(generator_train, validation_data=generator_valid, 
                               samples_per_epoch=SAMPLES_PER_EPOCH, nb_epoch=5)
 
 # Save training results
-model.save('model_gen.h5')  # creates a HDF5 file 'model.h5'
+model.save('model.h5')  # creates a HDF5 file 'model.h5'
 print("Model saved.")
