@@ -1,4 +1,4 @@
-### Import libraries and define functions
+# Import libraries
 
 import os
 import cv2
@@ -15,7 +15,8 @@ from keras.layers.core import Dense, Activation, Flatten, Dropout, Lambda
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, Cropping2D
 from keras.optimizers import Adam
 
-# Data exploration visualization.
+# Data exploration visualization
+
 '''''
 import matplotlib.pyplot as plt
 plt.rcdefaults()
@@ -32,30 +33,33 @@ plt.show()
 '''''
 
 # Function for preprocessing images on the fly while they are put through generator
-
-def manipulateBrightness(image):
-
-    # converting image to HSV: adjusting brightness is accomplished by manipulating V channel
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-    # random change of brightness, from a starting point though, to avoid getting too dark
-    delta_brightness = 0.2 + np.random.uniform()
-    # only manipulating V channel
-    image[:, :, 2] = image[:, :, 2] * delta_brightness
-    # converting back to RGB
-    image = cv2.cvtColor(image, cv2.COLOR_HSV2RGB)
-
-    return image
+# TODO: Any changes made in this function have to be adopted to drive.py
 
 def preprocessImage(image):
 
     # Cropping
-    image = image[70:135, :, :]
-    # Converting color or Grayscaling
+    image = image[60:135, :, :]  #
+    # Converting color due to cv2 import
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    # Resizing
+    # Resizing to final size
     image = cv2.resize(image, (width_size_final, height_size_final))
 
     return image
+
+
+def manipulateBrightness(image):
+
+    # Converting image to HSV: adjusting brightness is accomplished by manipulating V channel
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+    # Random change of brightness, from a starting point though, to avoid getting too dark
+    delta_brightness = 0.2 + np.random.uniform()
+    # Only manipulating V channel
+    image[:, :, 2] = image[:, :, 2] * delta_brightness
+    # Converting back to RGB
+    image = cv2.cvtColor(image, cv2.COLOR_HSV2RGB)
+
+    return image
+
 
 # Generator for training data
 
@@ -63,46 +67,48 @@ def createGenerator_train(data_frame, batch_size):
 
     X_batch = np.zeros((batch_size, height_size_final, width_size_final, 3))
     y_batch = np.zeros(batch_size)
-    u = 0
+    count_images = 0  # used for creating image output
     flip = 0
-    column_index = 0
-    steering_offset = 0
     while 1:
         for b in range(batch_size):
             # start process of randomly picking and processing image till output steering value is above critical value
             # pick random line (1 line = 3 images + 1 steering angle)
             line_index = np.random.randint(len(data_frame))
             # pick random column containing images of different points of view: 0 = CENTER | 1 = LEFT | 2 = RIGHT
-            # column_index = np.random.randint(3)
+            column_index = np.random.randint(3)
             # load chosen image from image data directory
             image_dir = "data-udacity/" + data_frame.iloc[line_index, column_index].strip()
             image = cv2.imread(image_dir)
             # load corresponding steering value
-            if column_index == 0:  # no steering offset for CENTER view (column_index==0)
-                steering_offset = 0
-                column_index += 1
-            elif column_index == 1:  # image of LEFT view was picked
+            steering_offset = 0  # no steering offset for CENTER view (column_index==0)
+            if column_index == 1:  # image of LEFT view was picked
                 steering_offset = +0.2
-                column_index += 1
-            elif column_index == 2:  # image of RIGHT view was picked
+            if column_index == 2:  # image of RIGHT view was picked
                 steering_offset = -0.2
-                column_index = 0
             steering_angle = data_frame.iloc[line_index, 3] + steering_offset
             # change brightness of image randomly
             image = manipulateBrightness(image)
-            # flip image and steering angle randomly
-            # flip = np.random.randint(2)
-            if flip < 1:  # flip some of the images
+            # flip every second image and steering angle to reduce left/right bias
+            if flip < 1:  # change to adjust bias
                 image = cv2.flip(image, 1)
-                steering_angle = steering_angle * -1.0
+                steering_angle *= -1.0
                 flip += 1
             else:
                 flip = 0
             # preprocess image data and assign steering angle
             X_batch[b] = preprocessImage(image)
             y_batch[b] = steering_angle
+            '''''
+            # save a couple of pictures to check preprocess output while testing
+            if count_images > 999:
+                file_dir = "Input-images/steering: " + str(steering_angle).strip() + ".jpg"
+                mpimg.imsave(file_dir, X_batch[b])
+                count_images = 0
+            count_images += 1
+            '''''
 
         yield X_batch, y_batch
+
 
 
 # Generator for validation data
@@ -124,38 +130,39 @@ def createGenerator_valid(data_frame, batch_size):
             image = cv2.imread(image_dir)
             # load corresponding steering value
             steering_angle = data_frame.iloc[line_index, 3]
-            # Resizing to fit model
+            # Resizing to fit model, other than that no preprocessing applied
             image = cv2.resize(image, (width_size_final, height_size_final))
             X_batch[b] = image
             y_batch[b] = steering_angle
 
         yield X_batch, y_batch
-        
-        
+
+
+# Architecture inspired by NVIDIA's paper "End to End Learning for Self-Driving Cars"
+
 def createModel():
-    # Architecture inspired by NVIDIA
 
     model = Sequential()
     # Normalizing
     model.add(Lambda(lambda x: x / 255.0 - 0.5, input_shape=(height_size_final, width_size_final, 3)))
 
     model.add(Convolution2D(24, 5, 5, subsample=(2, 2)))
-    model.add(Activation('relu'))
-    #   model.add(MaxPooling2D())
+    model.add(Activation('elu'))
+#   model.add(MaxPooling2D())
     model.add(Dropout(0.5))
 
     model.add(Convolution2D(36, 5, 5, subsample=(2, 2)))
-    model.add(Activation('relu'))
-    #   model.add(MaxPooling2D())
+    model.add(Activation('elu'))
+#   model.add(MaxPooling2D())
 
     model.add(Convolution2D(48, 5, 5, subsample=(2, 2)))
-    model.add(Activation('relu'))
+    model.add(Activation('elu'))
 
     model.add(Convolution2D(64, 3, 3))
-    model.add(Activation('relu'))
+    model.add(Activation('elu'))
 
     model.add(Convolution2D(64, 3, 3))
-    model.add(Activation('relu'))
+    model.add(Activation('elu'))
 
     model.add(Flatten())
     model.add(Dense(100))
@@ -164,21 +171,20 @@ def createModel():
     model.add(Dense(1))
 
     # Configure learning process
-    model.compile(optimizer='adam', loss="mse")
+    model.compile(optimizer="adam", loss="mse")
 
     return model
 
-### MAIN
+# MAIN SECTION
 
-# Defining final size of images after preprocessing
+# Final image size for input. Has to be same in drive.py!
+height_size_final = 64
+width_size_final = 64
 
-height_size_final = 64  # initial values: 80/40/64
-width_size_final = 64  # initial values: 320/160/64
-
-# read in CSV
+# Read in CSV
 data_frame = pd.read_csv('data-udacity/driving_log.csv', usecols=[0, 1, 2, 3])
 
-# validation split
+# Validation split
 valid_share = 0.2
 split = int(data_frame.shape[0] * (1 - valid_share))
 data_frame_train = data_frame.loc[0:split-1]
@@ -187,16 +193,16 @@ data_frame_valid = data_frame.loc[split:]
 # Create network architecture
 model = createModel()
 
-# Train model
+# Train model with generator
 BATCH_SIZE = 32
-SAMPLES_PER_EPOCH = (48216//BATCH_SIZE)*BATCH_SIZE
+SAMPLES_PER_EPOCH = (24108//BATCH_SIZE)*BATCH_SIZE
 
 generator_train = createGenerator_train(data_frame_train, BATCH_SIZE)
 generator_valid = createGenerator_valid(data_frame_valid, BATCH_SIZE)
 
-history = model.fit_generator(generator_train, validation_data=generator_valid, nb_val_samples=9643,
-                              samples_per_epoch=SAMPLES_PER_EPOCH, nb_epoch=5)
+history = model.fit_generator(generator_train, validation_data=generator_valid, nb_val_samples=4821,
+                              samples_per_epoch=SAMPLES_PER_EPOCH, nb_epoch=8)
 
 # Save training results
-model.save('model.h5')  # creates a HDF5 file 'model.h5'
+model.save('model.h5')
 print("Model saved.")
