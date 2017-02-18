@@ -27,10 +27,10 @@ app = Flask(__name__)
 model = None
 prev_image_array = None
 
-# Defining final size of images after preprocessing
+# Defining image size required for input to trained model
 
-height_size_final = 64  # initial values: 80, 40
-width_size_final = 64  # initial values: 320, 160
+height_size_final = 64
+width_size_final = 64
 
 @sio.on('telemetry')
 def telemetry(sid, data):
@@ -45,18 +45,19 @@ def telemetry(sid, data):
     image = Image.open(BytesIO(base64.b64decode(imgString)))
     image_array = np.asarray(image)
 
-    # Regional masking / Croping sky
-    image_array = image_array[70:135, :, :]
-    # Converting color or Grayscaling
+    # Preprocessing images from the simulator to fit to input requested by model's architecture:
+    # Cropping
+    image_array = image_array[60:135, :, :]
+    # Converting color due to cv2 import
     image_array = cv2.cvtColor(image_array, cv2.COLOR_BGR2RGB)
-    # Resizing
+    # Resizing to final size
     image_array = cv2.resize(image_array, (width_size_final, height_size_final))
 
     transformed_image_array = image_array[None, :, :, :]
     # This model currently assumes that the features of the model are just the images. Feel free to change this.
     steering_angle = float(model.predict(transformed_image_array, batch_size=1))
     # The driving model currently just outputs a constant throttle. Feel free to edit this.
-    throttle = 0.1
+    throttle = 0.2
     print(steering_angle)
     send_control(steering_angle, throttle)
 
@@ -82,7 +83,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     model = load_model(args.model)
-    # model.compile("adam", "mse")
 
     # wrap Flask application with engineio's middleware
     app = socketio.Middleware(sio, app)
